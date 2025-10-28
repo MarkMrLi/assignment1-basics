@@ -1,6 +1,8 @@
 import os
 import regex as re
 from collections import defaultdict
+from multiprocessing import Pool, Manager  # 导入多进程池
+from functools import partial
 # class Tokenizer :
 
 from typing import BinaryIO
@@ -54,7 +56,7 @@ def find_chunk_boundaries(
 
 def pre_tokenization(
         chunk: str, 
-        special_pat: re.Pattern) -> dict[str,int] :
+        special_pat: re.Pattern,) -> dict[str, int] :
     """
     A coarse-grained tokenization. 
     Get a dict[str,str_cnt]
@@ -65,13 +67,16 @@ def pre_tokenization(
     # remove special tokens
     sub_chunks = special_pat.split(chunk)
     PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
-    ret: defaultdict[str, int]= defaultdict(int)
+    counts = defaultdict(int)
     for sub_chunk in sub_chunks:
         matches = re.finditer(PAT, sub_chunk)
         for m in matches:
-            ret[m] += 1
+            # 关键修改：用 m.group() 获取匹配的字符串，替代不可序列化的 m
+            token_str = m.group()
+            counts[token_str] += 1
+
+    return counts
     
-    return ret
 
 
 def train_bpe(
@@ -95,25 +100,53 @@ def train_bpe(
     cur_vocab_size = 256
     for special_token in special_tokens :
         vocabulary[cur_vocab_size] = special_token.encode('utf-8')
+        cur_vocab_size += 1
     
-    # 2. 1) get chunk boundaries
+    
     with open(input_path, "rb") as f:
-        num_processes = 4
+        num_processes = os.cpu_count() or 4
+        # 2. 1) get chunk boundaries
         boundaries = find_chunk_boundaries(f, num_processes, b"<|endoftext|>")
 
+        chunks = []
         # The following is a serial implementation, but you can parallelize this
         # by sending each start/end pair to a set of processes.
         for start, end in zip(boundaries[:-1], boundaries[1:]):
             f.seek(start)
             chunk = f.read(end - start).decode("utf-8", errors="ignore")
-            special_pat = re.compile("|".join(map(re.escape, special_tokens)))
+            
             # Run pre-tokenization on your chunk and store the counts for each pre-token
+            chunks.append(chunk)
+        # 2. 2) remove special tokens
+        special_pat = re.compile("|".join(map(re.escape, special_tokens)))
+        manager = Manager()
+
+        # 2. 3) run pre-tokenization
+        partial_pre_token = partial(pre_tokenization,special_pat=special_pat)
+
+        
+        with Pool(processes=num_processes) as pool:
+            results = pool.map(partial_pre_token, chunks)
+
+        total_token_counts = defaultdict(int)
+        for result in results:
+            for token, count in result.items():
+                total_token_counts[token] += count
+        print(f"前10个token计数：{dict(list(total_token_counts.items())[:10])}")  # 打印部分结果
+
+    return vocabulary, []  
 
 
 
-    pass
 
 if __name__ == "__main__":
-    s : str = "hello"
-    for b in s.encode('utf-8') :
-        print(b)
+    # 测试：用一个示例文件运行train_bpe
+    test_input = "/home/marklee/study/cs336/assignment1-basics/data/TinyStoriesV2-GPT4-valid.txt"  # 替换为你的输入文件路径
+    special_tokens = ["<|endoftext|>"]
+    vocab, merges = train_bpe(
+        input_path=test_input,
+        vocab_size=1000,
+        special_tokens=special_tokens
+    )
+    print(f"初始化词汇表大小：{len(vocab)}")
+    

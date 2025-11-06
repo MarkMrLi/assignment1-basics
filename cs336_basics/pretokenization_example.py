@@ -50,7 +50,7 @@ def find_chunk_boundaries(
 
 
 ## Usage
-with open(..., "rb") as f:
+with open("/home/marklee/study/cs336/assignment1-basics/data/TinyStoriesV2-GPT4-valid.txt", "rb") as f:
     num_processes = 4
     boundaries = find_chunk_boundaries(f, num_processes, b"<|endoftext|>")
 
@@ -58,5 +58,9 @@ with open(..., "rb") as f:
     # by sending each start/end pair to a set of processes.
     for start, end in zip(boundaries[:-1], boundaries[1:]):
         f.seek(start)
+        if(start == end):
+            print("Skipping empty chunk")
+            break
         chunk = f.read(end - start).decode("utf-8", errors="ignore")
         # Run pre-tokenization on your chunk and store the counts for each pre-token
+    print("The number of chunks created:", len(boundaries) - 1)

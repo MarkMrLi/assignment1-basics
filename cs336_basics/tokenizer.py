@@ -19,6 +19,10 @@ class Tokenizer :
         self.merges = merges
         self.special_tokens = special_tokens
 
+        # Create a reverse vocabulary for quick lookups
+        self.byte_to_id = {v: k for k, v in vocab.items()}
+        self.pat = PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+
     @classmethod
     def from_files(
         cls,
@@ -29,16 +33,134 @@ class Tokenizer :
         """
         Build Tokenizer instance from file
         """
+        vocab = {}
+        with open(vocab_file, 'rb') as f :
+            for line in f:
+                idx, token = line.strip().split()
+                vocab[int(idx)] = token
         pass
 
-    def encode(self, text: str) -> list[int] :
-        pass
+    def encode(self, text: str) -> list[int]:
+        if not self.special_tokens:
+            return self._encode_chunk(text)
+        
+        # 按照长度降序排序特殊token，确保先匹配长的token
+        sorted_special_tokens = sorted(self.special_tokens, key=len, reverse=True)
+        special_pat = re.compile(f"({'|'.join(map(re.escape, sorted_special_tokens))})")
+        
+        ids = []
+        last_end = 0
+        
+        # 使用finditer而不是splititer，这样可以控制匹配顺序
+        for match in special_pat.finditer(text):
+            # 处理特殊token之前的普通文本
+            start, end = match.span()
+            if start > last_end:
+                normal_text = text[last_end:start]
+                ids.extend(self._encode_chunk(normal_text))
+            
+            # 处理特殊token
+            special_token = match.group()
+            ids.append(self.byte_to_id[special_token.encode('utf-8')])
+            last_end = end
+        
+        # 处理剩余文本
+        if last_end < len(text):
+            remaining_text = text[last_end:]
+            ids.extend(self._encode_chunk(remaining_text))
+        
+        return ids
 
     def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int] :
-        pass
+        for chunk in iterable:
+                # 如果是文件对象，chunk就是一行文本
+                # 如果是其他可迭代对象，chunk就是其中的一个元素
+                
+                # 确保是字符串
+                if isinstance(chunk, bytes):
+                    chunk = chunk.decode('utf-8')
+                
+                # 编码当前文本块
+                ids = self.encode(chunk)
+                
+                # 逐个生成token ID
+                for token_id in ids:
+                    yield token_id
 
     def decode(self, ids: list[int]) -> str :
-        pass
+        byte_sequences = []
+
+        
+        for id in ids :
+            byte_sequences.append(self.vocab[id])
+
+        all_bytes = b''.join(byte_sequences)
+
+        try:
+            return all_bytes.decode('utf-8')
+        except UnicodeDecodeError:
+            return all_bytes.decode('utf-8', errors='replace')
+
+
+    def _encode_chunk(self, text_chunk: str) -> list[int]:
+        """Helper to encode a single chunk of text that contains no special tokens."""
+        if self.special_tokens and text_chunk in self.special_tokens:
+            return [self.byte_to_id[text_chunk.encode('utf-8')]]
+        
+        ids = []
+
+        for m in re.finditer(self.pat, text_chunk):
+            pre_token = m.group()
+            byte_parts = [bytes([b]) for b in pre_token.encode('utf-8')]
+
+            if not byte_parts:
+                continue
+
+            # 如果只有一个字节部分，直接处理
+            if len(byte_parts) == 1:
+                ids.append(self.byte_to_id[byte_parts[0]])
+                continue
+
+            changed = True
+            while changed and len(byte_parts) > 1:
+                changed = False
+                new_byte_parts = []
+                i = 0
+                
+                # 找到所有可以合并的字节对及其在merges中的优先级
+                merge_candidates = []
+                for idx, (b1, b2) in enumerate(zip(byte_parts[:-1], byte_parts[1:])):
+                    pair = (b1, b2)
+                    # 检查这个字节对是否在合并规则列表中
+                    if pair in self.merges:
+                        # 使用在merges列表中的索引作为优先级（索引越小优先级越高）
+                        priority = self.merges.index(pair)
+                        merge_candidates.append((priority, pair, idx))
+                
+                if not merge_candidates:
+                    break
+                    
+                # 找到优先级最高的合并对（索引最小的）
+                merge_candidates.sort(key=lambda x: x[0])
+                best_priority, best_pair, best_idx = merge_candidates[0]
+                
+                # 应用合并
+                while i < len(byte_parts):
+                    if i < len(byte_parts) - 1 and (byte_parts[i], byte_parts[i+1]) == best_pair:
+                        merged_bytes = byte_parts[i] + byte_parts[i+1]
+                        new_byte_parts.append(merged_bytes)
+                        changed = True
+                        i += 2
+                    else:
+                        new_byte_parts.append(byte_parts[i])
+                        i += 1
+                byte_parts = new_byte_parts
+
+            # 将最终的字节序列转换为ID
+            for byte_seq in byte_parts:
+                ids.append(self.byte_to_id[byte_seq])
+        
+        return ids
 
 
 
@@ -208,10 +330,6 @@ def train_bpe_slow(
         2) merge pairs
         3) update 
     """
-    input_path = self.input_path
-    vocab_size = self.vocab_size
-    special_tokens = self.special_tokens
-
     # 1. init vocabulary
     vocabulary :dict[int, bytes] = {k : bytes([k]) for k in range(256)}
     cur_vocab_size = 256
@@ -400,11 +518,10 @@ def update_token_counts(total_token_counts: dict[tuple[bytes], int],
 
 
 if __name__ == "__main__":
-    tokenizer = BPETokenizer(
+
+    vocab, merges = train_bpe(
         input_path="/home/marklee/study/cs336/assignment1-basics/data/test.txt",
         vocab_size=260,
-        special_tokens=["<|endoftext|>"]
-    )
-    vocab, merges = tokenizer.train_bpe()
+        special_tokens=["<|endoftext|>"])
 
     

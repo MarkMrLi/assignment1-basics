@@ -9,7 +9,7 @@ import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
 from cs336_basics.tokenizer import train_bpe, Tokenizer
-from cs336_basics.linear import Linear
+from cs336_basics.module import Linear, Embedding
 def run_linear(
     d_in: int,
     d_out: int,
@@ -51,8 +51,9 @@ def run_embedding(
     Returns:
         Float[Tensor, "... d_model"]: Batch of embeddings returned by your Embedding layer.
     """
-
-    raise NotImplementedError
+    embedding = Embedding(vocab_size, d_model)
+    embedding.weight.data = weights
+    return embedding.forward(token_ids)
 
 
 def run_swiglu(

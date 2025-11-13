@@ -9,7 +9,7 @@ import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
 from cs336_basics.tokenizer import train_bpe, Tokenizer
-from cs336_basics.module import Linear, Embedding, RMSNorm, FFN
+from cs336_basics.module import *
 def run_linear(
     d_in: int,
     d_out: int,
@@ -91,7 +91,6 @@ def run_swiglu(
     swiglu.down_proj.data = w2_weight
 
     return swiglu.forward(in_features)
-    raise NotImplementedError
 
 
 def run_scaled_dot_product_attention(
@@ -208,7 +207,8 @@ def run_rope(
     Returns:
         Float[Tensor, " ... sequence_length d_k"]: Tensor with RoPEd input.
     """
-    raise NotImplementedError
+    rope = Rope(theta, d_k, max_seq_len)
+    return rope.forward(in_query_or_key, token_positions)
 
 
 def run_transformer_block(

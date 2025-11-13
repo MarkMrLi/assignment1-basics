@@ -1,5 +1,5 @@
 import torch
-from einops import einsum
+from einops import einsum, rearrange
 
 class Linear(torch.nn.Module):
     def __init__(self, in_features: int, out_features:int, device=None, dtype=None):
@@ -83,5 +83,43 @@ class FFN(torch.nn.Module):
         hidden = gate * torch.sigmoid(gate) * up
 
         result = einsum(self.down_proj, hidden, "d_model d_ff, ... d_ff-> ... d_model")
+
+        return result
+
+class Rope(torch.nn.Module):
+    def __init__(self, theta: float, d_k: int, max_seq_len: int, device=None):
+        super().__init__()
+        self.theta = theta
+        self.d_k = d_k
+        self.max_seq_len = max_seq_len
+        self.device = device
+
+        # hidden = torch.Tensor([pow(theta,(2 * k - 2) / d_k) for k in (1..d_k / 2)])
+        indices = torch.arange(0, d_k//2,dtype=torch.float32)
+        freqs = 1.0 / (theta ** (2 * indices / d_k))
+
+        positions = torch.arange(0, max_seq_len)
+
+        angles = einsum(positions, freqs, "seq_len, d_k_dived2 -> seq_len d_k_dived2")
+        cos_cache = torch.cos(angles)  # [max_seq_len, dim//2]
+        sin_cache = torch.sin(angles)  # [max_seq_len, dim//2]
+
+        self.register_buffer("cos_cache", cos_cache, persistent=False)
+        self.register_buffer("sin_cache", sin_cache, persistent=False)
+
+    def forward(self, x: torch.Tensor, token_positions: torch.Tensor) -> torch.Tensor :
+        sin = self.sin_cache[token_positions]
+        cos = self.cos_cache[token_positions]
+
+        pair_x = rearrange(x, "... (d_k_dived2 tow) -> ... d_k_dived2 tow", tow = 2)
+        
+        x1 = pair_x[..., 0]
+        x2 = pair_x[..., 1]
+
+        rotated_x1 = x1 * cos - x2 * sin
+        rotated_x2 = x2 * cos + x1 * sin
+
+        result = torch.stack([rotated_x1,rotated_x2],dim=-1)
+        result = rearrange(result, "... d_k_dived2 tow -> ... (d_k_dived2 tow)")
 
         return result

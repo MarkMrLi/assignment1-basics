@@ -9,7 +9,7 @@ import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
 from cs336_basics.tokenizer import train_bpe, Tokenizer
-from cs336_basics.module import Linear, Embedding, RMSNorm
+from cs336_basics.module import Linear, Embedding, RMSNorm, FFN
 def run_linear(
     d_in: int,
     d_out: int,
@@ -85,6 +85,12 @@ def run_swiglu(
     # swiglu.w1.weight.data = w1_weight
     # swiglu.w2.weight.data = w2_weight
     # swiglu.w3.weight.data = w3_weight
+    swiglu = FFN(d_model, d_ff)
+    swiglu.up_proj.data = w3_weight
+    swiglu.gate_proj.data = w1_weight
+    swiglu.down_proj.data = w2_weight
+
+    return swiglu.forward(in_features)
     raise NotImplementedError
 
 

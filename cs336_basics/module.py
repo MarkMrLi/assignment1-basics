@@ -61,3 +61,27 @@ class RMSNorm(torch.nn.Module):
 
         return result.to(in_dtype)
 
+class FFN(torch.nn.Module):
+    def __init__(self, d_model:int, d_ff:int):
+        super().__init__()
+        self.d_model = d_model
+        self.d_ff = d_ff
+        self.gate_proj = torch.nn.Parameter(torch.empty((d_ff, d_model)))
+        self.down_proj = torch.nn.Parameter(torch.empty((d_model, d_ff)))
+        self.up_proj = torch.nn.Parameter(torch.empty((d_ff, d_model)))
+
+        self._init_weights()
+    def _init_weights(self):
+        torch.nn.init.normal_(self.gate_proj, std=0.02)
+        torch.nn.init.normal_(self.down_proj, std=0.02) 
+        torch.nn.init.normal_(self.up_proj, std=0.02)
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor :
+        gate = einsum(self.gate_proj, x, "d_ff d_model,  ... d_model -> ... d_ff")
+        
+        up = einsum(self.up_proj, x, "d_ff d_model, ... d_model -> ... d_ff")
+        hidden = gate * torch.sigmoid(gate) * up
+
+        result = einsum(self.down_proj, hidden, "d_model d_ff, ... d_ff-> ... d_model")
+
+        return result

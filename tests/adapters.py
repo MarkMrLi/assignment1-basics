@@ -9,7 +9,7 @@ import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
 from cs336_basics.tokenizer import train_bpe, Tokenizer
-from cs336_basics.module import Linear, Embedding
+from cs336_basics.module import Linear, Embedding, RMSNorm
 def run_linear(
     d_in: int,
     d_out: int,
@@ -52,7 +52,7 @@ def run_embedding(
         Float[Tensor, "... d_model"]: Batch of embeddings returned by your Embedding layer.
     """
     embedding = Embedding(vocab_size, d_model)
-    embedding.weight.data = weights
+    embedding.W.data = weights
     return embedding.forward(token_ids)
 
 
@@ -380,6 +380,9 @@ def run_rmsnorm(
         Float[Tensor,"... d_model"]: Tensor of with the same shape as `in_features` with the output of running
         RMSNorm of the `in_features`.
     """
+    rmsnorm = RMSNorm(d_model, eps)
+    rmsnorm.W.data = weights
+    return rmsnorm.forward(in_features)
     raise NotImplementedError
 
 

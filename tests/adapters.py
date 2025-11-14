@@ -30,7 +30,7 @@ def run_linear(
     """
     linear = Linear(d_in, d_out)
     linear.W.data = weights
-    return linear.forward(in_features)
+    return linear(in_features)
 
 
 def run_embedding(
@@ -53,7 +53,7 @@ def run_embedding(
     """
     embedding = Embedding(vocab_size, d_model)
     embedding.W.data = weights
-    return embedding.forward(token_ids)
+    return embedding(token_ids)
 
 
 def run_swiglu(
@@ -86,11 +86,11 @@ def run_swiglu(
     # swiglu.w2.weight.data = w2_weight
     # swiglu.w3.weight.data = w3_weight
     swiglu = FFN(d_model, d_ff)
-    swiglu.up_proj.data = w3_weight
-    swiglu.gate_proj.data = w1_weight
-    swiglu.down_proj.data = w2_weight
+    swiglu.up_proj.W.data = w3_weight
+    swiglu.gate_proj.W.data = w1_weight
+    swiglu.down_proj.W.data = w2_weight
 
-    return swiglu.forward(in_features)
+    return swiglu(in_features)
 
 
 def run_scaled_dot_product_attention(
@@ -145,7 +145,13 @@ def run_multihead_self_attention(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
+    attention = Attention(d_model, num_heads)
+    attention.q_proj.W.data = q_proj_weight
+    attention.k_proj.W.data = k_proj_weight
+    attention.v_proj.W.data = v_proj_weight
+    attention.o_proj.W.data = o_proj_weight
+
+    return attention(in_features)
 
 
 def run_multihead_self_attention_with_rope(
@@ -185,8 +191,13 @@ def run_multihead_self_attention_with_rope(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
-
+    attention = Attention(d_model, num_heads, enable_rope=True, theta=theta, max_seq_len=max_seq_len)
+    attention.q_proj.W.data = q_proj_weight
+    attention.k_proj.W.data = k_proj_weight
+    attention.v_proj.W.data = v_proj_weight
+    attention.o_proj.W.data = o_proj_weight
+    
+    return attention(in_features,token_positions)
 
 def run_rope(
     d_k: int,
@@ -208,7 +219,7 @@ def run_rope(
         Float[Tensor, " ... sequence_length d_k"]: Tensor with RoPEd input.
     """
     rope = Rope(theta, d_k, max_seq_len)
-    return rope.forward(in_query_or_key, token_positions)
+    return rope(in_query_or_key, token_positions)
 
 
 def run_transformer_block(
@@ -308,7 +319,7 @@ def run_transformer_lm(
         num_heads (int): Number of heads to use in multi-headed attention. `d_model` must be
             evenly divisible by `num_heads`.
         d_ff (int): Dimensionality of the feed-forward inner layer (section 3.3).
-        rope_theta (float): The RoPE $\Theta$ parameter.
+        rope_theta (float): The RoPE $\\Theta$ parameter.
         weights (dict[str, Tensor]):
             State dict of our reference implementation. {num_layers} refers to an
             integer between `0` and `num_layers - 1` (the layer index).

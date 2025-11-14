@@ -21,7 +21,7 @@ class Linear(torch.nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor :
-        result = einsum(self.W, x, "out in, ... in -> ... out")
+        result = einsum(x, self.W, "... in_dim, out_dim in_dim  -> ... out_dim")
         return result
 
 class Embedding(torch.nn.Module):
@@ -68,24 +68,17 @@ class FFN(torch.nn.Module):
         super().__init__()
         self.d_model = d_model
         self.d_ff = d_ff
-        self.gate_proj = torch.nn.Parameter(torch.empty((d_ff, d_model)))
-        self.down_proj = torch.nn.Parameter(torch.empty((d_model, d_ff)))
-        self.up_proj = torch.nn.Parameter(torch.empty((d_ff, d_model)))
-
-        self._init_weights()
-    def _init_weights(self):
-        torch.nn.init.normal_(self.gate_proj, std=0.02)
-        torch.nn.init.normal_(self.down_proj, std=0.02) 
-        torch.nn.init.normal_(self.up_proj, std=0.02)
+        self.gate_proj = Linear(d_model, d_ff)#torch.nn.Parameter(torch.empty((d_ff, d_model)))
+        self.down_proj = Linear(d_model, d_ff)# torch.nn.Parameter(torch.empty((d_model, d_ff)))
+        self.up_proj = Linear(d_ff, d_model)# torch.nn.Parameter(torch.empty((d_ff, d_model)))
     
     def forward(self, x: torch.Tensor) -> torch.Tensor :
-        gate = einsum(self.gate_proj, x, "d_ff d_model,  ... d_model -> ... d_ff")
-        
-        up = einsum(self.up_proj, x, "d_ff d_model, ... d_model -> ... d_ff")
+        gate = self.gate_proj(x)
+        up = self.up_proj(x)
+
         hidden = gate * torch.sigmoid(gate) * up
 
-        result = einsum(self.down_proj, hidden, "d_model d_ff, ... d_ff-> ... d_model")
-
+        result = self.down_proj(hidden)
         return result
 
 class Rope(torch.nn.Module):
@@ -147,3 +140,48 @@ def scaled_dot_product_attention(
     attention_weights = softmax(pre_softmax_val, -1)
 
     return einsum(attention_weights, V, "... queries k_v, ... k_v d_v -> ... queries d_v")
+
+class Attention(torch.nn.Module):
+    def __init__(self, d_model: int, num_heads: int, device = None, dtype = None,
+                enable_rope = False, theta: float = 10000, max_seq_len:int = 100):
+        super().__init__()
+        self.device = device
+        self.dtype = dtype
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.d_k = d_model // num_heads
+        self.d_v = d_model // num_heads
+        self.q_proj = Linear(d_model, num_heads * self.d_k)
+        self.k_proj = Linear(d_model, num_heads * self.d_k)
+        self.v_proj = Linear(d_model, num_heads * self.d_v)
+        self.o_proj = Linear(num_heads * self.d_v, d_model)
+        self.enable_rope = enable_rope
+        if enable_rope :
+            self.rope = Rope(theta, self.d_k, max_seq_len)
+
+    def forward(
+            self, 
+            x: Float[Tensor, "... seq_len d_model"],
+            token_positions = None
+        ) -> Float[Tensor, "... seq_len d_model"] :
+        seq_len = x.shape[-2]
+
+        q: Float[Tensor, "... seq_len (num_head d_k)"] = self.q_proj(x)
+        k: Float[Tensor, "... seq_len (num_head d_k)"] = self.k_proj(x)
+        v: Float[Tensor, "... seq_len (num_head d_v)"] = self.v_proj(x)
+
+        q = rearrange(q, "... seq_len (num_head d_k) -> ... num_head seq_len d_k", d_k = self.d_k)
+        k = rearrange(k, "... seq_len (num_head d_k) -> ... num_head seq_len d_k", d_k = self.d_k)
+        v = rearrange(v, "... seq_len (num_head d_v) -> ... num_head seq_len d_v", d_v = self.d_v)
+        if self.enable_rope :
+            q = self.rope(q, token_positions)
+            k = self.rope(k, token_positions)
+        mask = torch.tril(torch.ones(seq_len, seq_len, device=x.device)).bool()
+
+        result: Float[Tensor, "... num_head seq_len d_v"] = scaled_dot_product_attention(q, k, v, mask)
+        result = rearrange(result, "... num_head seq_len d_v -> ... seq_len (num_head d_v)", d_v = self.d_v)
+        out_put: Float[Tensor, "... seq_len d_model"] = self.o_proj(result)
+
+        return out_put
+
+

@@ -9,7 +9,7 @@ class Linear(torch.nn.Module):
             device=device, 
             dtype=dtype)
         )
-        std = torch.sqrt(2 / (in_features + out_features))
+        std = torch.sqrt(torch.tensor([2 / (in_features + out_features)]))
         torch.nn.init.trunc_normal_(
             self.W,
             mean=0,
@@ -123,3 +123,9 @@ class Rope(torch.nn.Module):
         result = rearrange(result, "... d_k_dived2 tow -> ... (d_k_dived2 tow)")
 
         return result
+    
+def softmax(x: torch.Tensor, dim:int) -> torch.Tensor :
+    max_x = torch.max(x, dim=dim, keepdim=True).values
+    exp_x = torch.exp(x - max_x)
+
+    return exp_x / torch.sum(exp_x, dim=dim, keepdim=True)

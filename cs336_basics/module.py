@@ -2,6 +2,7 @@ import torch
 from torch import Tensor
 from einops import einsum, rearrange, repeat
 from jaxtyping import Bool, Float, Int
+from cs336_basics.operator import softmax
 
 class Linear(torch.nn.Module):
     def __init__(self, in_features: int, out_features:int, device=None, dtype=None):
@@ -119,11 +120,7 @@ class Rope(torch.nn.Module):
 
         return result
     
-def softmax(x: torch.Tensor, dim:int = -1) -> torch.Tensor :
-    max_x = torch.max(x, dim=dim, keepdim=True).values
-    exp_x = torch.exp(x - max_x)
 
-    return exp_x / torch.sum(exp_x, dim=dim, keepdim=True)
 
 def scaled_dot_product_attention(
     Q: Float[Tensor, " ... queries d_k"],

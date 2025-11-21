@@ -1,6 +1,6 @@
 import torch
 from torch import Tensor
-from einops import einsum, rearrange
+from einops import einsum, rearrange, repeat
 from jaxtyping import Bool, Float, Int
 
 class Linear(torch.nn.Module):
@@ -25,10 +25,10 @@ class Linear(torch.nn.Module):
         return result
 
 class Embedding(torch.nn.Module):
-    def __init__(self, num_embeddings, embedding_dim, device=None, dtype=None):
+    def __init__(self, vocab_size, embedding_dim, device=None, dtype=None):
         super().__init__()
         self.W = torch.nn.Parameter(torch.empty(
-            (num_embeddings, embedding_dim),
+            (vocab_size, embedding_dim),
             device=device,
             dtype=dtype)
         )
@@ -119,7 +119,7 @@ class Rope(torch.nn.Module):
 
         return result
     
-def softmax(x: torch.Tensor, dim:int) -> torch.Tensor :
+def softmax(x: torch.Tensor, dim:int = -1) -> torch.Tensor :
     max_x = torch.max(x, dim=dim, keepdim=True).values
     exp_x = torch.exp(x - max_x)
 
@@ -183,5 +183,122 @@ class Attention(torch.nn.Module):
         out_put: Float[Tensor, "... seq_len d_model"] = self.o_proj(result)
 
         return out_put
+
+class Block(torch.nn.Module):
+    def __init__(
+            self,
+            d_model: int,
+            num_heads: int,
+            d_ff: int,
+            weights: dict[str, Tensor],
+            max_seq_len: int,
+            theta: float,
+            num_layers: int = -1,
+            
+        ):
+        super().__init__()
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.d_ff = d_ff
+        self.weights = weights
+        self.num_layers = num_layers
+        self.max_seq_len = max_seq_len
+        self.theta = theta
+
+        self.__init_parameters()
+
+    def __init_parameters(self) :
+        if self.num_layers == -1:
+            layer_prefix = ""
+        else:
+            layer_prefix = f"layers.{self.num_layers}."
+
+        self.norm1 = RMSNorm(self.d_model)
+        self.norm1.W.data = self.weights[layer_prefix + "ln1.weight"]
+        
+        self.attn = Attention(self.d_model, self.num_heads, enable_rope=True, theta=self.theta, max_seq_len=self.max_seq_len)
+        self.attn.q_proj.W.data = self.weights[layer_prefix + "attn.q_proj.weight"]
+        self.attn.k_proj.W.data = self.weights[layer_prefix + "attn.k_proj.weight"]
+        self.attn.v_proj.W.data = self.weights[layer_prefix + "attn.v_proj.weight"]
+        self.attn.o_proj.W.data = self.weights[layer_prefix + "attn.output_proj.weight"]    
+
+        self.norm2 = RMSNorm(self.d_model)
+        self.norm2.W.data = self.weights[layer_prefix + "ln2.weight"]
+
+        self.ffn = FFN(self.d_model, self.d_ff)
+        self.ffn.gate_proj.W.data = self.weights[layer_prefix + "ffn.w1.weight"]
+        self.ffn.down_proj.W.data = self.weights[layer_prefix + "ffn.w2.weight"]
+        self.ffn.up_proj.W.data = self.weights[layer_prefix + "ffn.w3.weight"]
+    def forward(
+            self,
+            in_features: Float[Tensor, " batch sequence_length d_model"],
+            token_positions: Int[Tensor, " ... sequence_length"]
+    ) -> Float[Tensor, " batch sequence_length d_model"] :
+        
+        norm_features = self.norm1(in_features)
+
+        attn_output = self.attn(norm_features, token_positions)
+        in_features = in_features + attn_output
+
+        norm_features = self.norm2(in_features)
+
+        out_feature = in_features + self.ffn(norm_features)
+
+        return out_feature
+
+
+def transformer_lm(
+    vocab_size: int,
+    context_length: int,
+    d_model: int,
+    num_layers: int,
+    num_heads: int,
+    d_ff: int,
+    rope_theta: float,
+    weights: dict[str, Tensor],
+    in_indices: Int[Tensor, " batch_size sequence_length"],
+) -> Float[Tensor, " batch_size sequence_length vocab_size"]:
+    embedder = Embedding(vocab_size, d_model)
+    embedder.W.data = weights["token_embeddings.weight"]
+
+    in_features:Float[Tensor, "batch_size seq_len d_model"] = embedder(in_indices)
+
+    token_positions: Int[Tensor, " ... sequence_length"] = repeat(
+        torch.arange(in_features.size(1), device=in_features.device),
+        'seq -> batch seq',
+        batch=in_features.size(0)
+    )
+
+    layers = []
+    for i in range(num_layers):
+        layer = Block(
+            d_model=d_model,
+            num_heads=num_heads,
+            d_ff=d_ff,
+            weights=weights,
+            theta=rope_theta,
+            max_seq_len=context_length,
+            num_layers=i,
+        )
+        layers.append(layer)
+    
+    for layer in layers:
+        in_features = layer(in_features,token_positions)
+    
+       
+    # 5. 最终层归一化
+    ln_final = RMSNorm(d_model)
+    ln_final.W.data = weights["ln_final.weight"]
+    in_features = ln_final(in_features)
+    
+    # 6. 语言模型头
+    lm_head = Linear(d_model, vocab_size)
+    lm_head.W.data = weights["lm_head.weight"]
+    logits = lm_head(in_features)  # [batch_size, sequence_length, vocab_size]
+    
+    # 7. Softmax得到概率分布
+    # output_probabilities = softmax(logits)
+    
+    return logits
 
 

@@ -196,7 +196,7 @@ def run_multihead_self_attention_with_rope(
     attention.k_proj.W.data = k_proj_weight
     attention.v_proj.W.data = v_proj_weight
     attention.o_proj.W.data = o_proj_weight
-    
+
     return attention(in_features,token_positions)
 
 def run_rope(
@@ -292,7 +292,13 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
-    raise NotImplementedError
+    transformer_block = Block(d_model, num_heads, d_ff, weights,max_seq_len, theta)
+    token_positions: Int[Tensor, " ... sequence_length"] = repeat(
+            torch.arange(in_features.size(1), device=in_features.device),
+            'seq -> batch seq',
+            batch=in_features.size(0)
+        )
+    return transformer_block(in_features, token_positions)
 
 
 def run_transformer_lm(
@@ -374,7 +380,7 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
     """
-    raise NotImplementedError
+    return transformer_lm(vocab_size,context_length,d_model, num_layers,num_heads, d_ff, rope_theta, weights, in_indices)
 
 
 def run_rmsnorm(
@@ -400,7 +406,6 @@ def run_rmsnorm(
     rmsnorm = RMSNorm(d_model, eps)
     rmsnorm.W.data = weights
     return rmsnorm.forward(in_features)
-    raise NotImplementedError
 
 
 def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:

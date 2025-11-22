@@ -2,7 +2,7 @@ import torch
 from torch import Tensor
 from einops import einsum, rearrange, repeat
 from jaxtyping import Bool, Float, Int
-from cs336_basics.operator import softmax
+from cs336_basics.utils import softmax
 
 class Linear(torch.nn.Module):
     def __init__(self, in_features: int, out_features:int, device=None, dtype=None):

@@ -167,3 +167,6 @@ foo.py
 cs336_basics/test_*
 profile/
 Ai_docs/
+einstein_example.py
+compute_FLOPs.py
+split_test.py

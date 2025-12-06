@@ -3,6 +3,8 @@ from torch import Tensor
 from jaxtyping import Float, Int
 from einops import rearrange
 from math import cos, pi
+from collections.abc import Iterable
+
 def softmax(x: torch.Tensor, dim:int = -1) -> torch.Tensor :
     max_x = torch.max(x, dim=dim, keepdim=True).values
     exp_x = torch.exp(x - max_x)
@@ -42,3 +44,30 @@ def get_lr_cosine_schedule(
             lr = min_learning_rate
     
     return lr
+
+def gradient_clipping(
+    parameters: Iterable[torch.nn.Parameter], 
+    max_l2_norm: float, 
+    epsilon: float = 1e-6
+):
+    # 步骤1：收集所有有效梯度（跳过无梯度或冻结的参数）
+    grads = []
+    for p in parameters:
+        if p.grad is not None and p.requires_grad:
+            # 展平梯度为1D向量，方便拼接计算全局范数
+            grads.append(p.grad.flatten())
+    
+    if not grads:  # 没有需要裁剪的梯度，直接返回
+        return
+    
+    # 步骤2：计算所有梯度的全局L2范数
+    all_grads = torch.cat(grads)
+    global_l2_norm = torch.linalg.norm(all_grads, ord=2)
+    
+    # 步骤3：若全局范数超过阈值，统一缩放所有梯度
+    if global_l2_norm > max_l2_norm:
+        scaling_factor = max_l2_norm / (global_l2_norm + epsilon)
+        # 遍历参数，应用缩放因子
+        for p in parameters:
+            if p.grad is not None and p.requires_grad:
+                p.grad.data *= scaling_factor  # 用 data 避免计算图问题

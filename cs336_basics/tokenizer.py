@@ -18,7 +18,7 @@ class Tokenizer :
         **kwargs,
     ):
         self.vocab = vocab
-        self.merges = merges
+        self.merges = {pair: i for i, pair in enumerate(merges)}
         self.special_tokens = special_tokens
 
         # Create a reverse vocabulary for quick lookups
@@ -143,7 +143,7 @@ class Tokenizer :
                     # 检查这个字节对是否在合并规则列表中
                     if pair in self.merges:
                         # 使用在merges列表中的索引作为优先级（索引越小优先级越高）
-                        priority = self.merges.index(pair)
+                        priority = self.merges[pair]
                         merge_candidates.append((priority, pair, idx))
                 
                 if not merge_candidates:

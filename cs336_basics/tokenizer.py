@@ -6,6 +6,8 @@ from functools import partial
 from typing import Iterable, Iterator
 
 from typing import BinaryIO
+import base64
+import json
 
 class Tokenizer :
     def __init__(
@@ -26,19 +28,26 @@ class Tokenizer :
     @classmethod
     def from_files(
         cls,
-        vocab_file: str,
-        merges_file: str,
-        special_tokens_file: list[str] | None = None
+        input_path:str
     ) -> 'Tokenizer' :
         """
         Build Tokenizer instance from file
         """
-        vocab = {}
-        with open(vocab_file, 'rb') as f :
-            for line in f:
-                idx, token = line.strip().split()
-                vocab[int(idx)] = token
-        pass
+        with open(input_path,'r') as f:
+            data = json.load(f)
+
+        vocab = {
+            item['id']: b64_decode(item["token"])
+            for item in data["vocab"]
+        }
+
+        merges = [
+            (b64_decode(a), b64_decode(b))
+            for a, b in data["merges"]
+        ]
+
+        special_tokens = data["special_tokens"]
+        return Tokenizer(vocab, merges, special_tokens)
 
     def encode(self, text: str) -> list[int]:
         if not self.special_tokens:
@@ -159,9 +168,11 @@ class Tokenizer :
             # 将最终的字节序列转换为ID
             for byte_seq in byte_parts:
                 ids.append(self.byte_to_id[byte_seq])
-        
         return ids
-
+    def get_vocab_size(self) -> int:
+        return len(self.vocab)
+def b64_decode(s: str) -> bytes:
+    return base64.b64decode(s.encode("ascii"))
 
 
 def train_bpe(

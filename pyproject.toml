@@ -21,6 +21,7 @@ dependencies = [
     "ty>=0.0.1a16",
     "requests>=2.32.5",
     "memory-profiler>=0.61.0",
+    "python-dotenv",
 ]
 
 [build-system]
@@ -32,7 +33,7 @@ module-name = "cs336_basics"
 module-root = ""
 
 [[tool.uv.index]]
-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+url = "https://mirrors.aliyun.com/pypi/simple/"
 default = true
 
 [tool.uv]

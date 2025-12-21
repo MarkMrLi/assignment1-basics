@@ -296,7 +296,7 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
-    transformer_block = Block(d_model, num_heads, d_ff, weights,max_seq_len, theta)
+    transformer_block = Block(d_model, num_heads, d_ff, max_seq_len,weights, theta)
     token_positions: Int[Tensor, " ... sequence_length"] = repeat(
             torch.arange(in_features.size(1), device=in_features.device),
             'seq -> batch seq',
@@ -384,7 +384,17 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
     """
-    return transformer_lm(vocab_size,context_length,d_model, num_layers,num_heads, d_ff, rope_theta, weights, in_indices)
+    transformer = TransformerLM(
+        vocab_size=vocab_size,
+        context_length=context_length,
+        d_model=d_model,
+        num_layers=num_layers,
+        num_heads=num_heads,
+        d_ff=d_ff,
+        rope_theta=rope_theta,
+        weights=weights
+    )
+    return transformer.forward(in_indices)
 
 
 def run_rmsnorm(

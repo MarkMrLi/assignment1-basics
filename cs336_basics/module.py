@@ -187,9 +187,9 @@ class Block(torch.nn.Module):
             d_model: int,
             num_heads: int,
             d_ff: int,
-            weights: dict[str, Tensor],
             max_seq_len: int,
-            theta: float,
+            weights: dict[str, Tensor] | None = None,
+            theta: float = 10000,
             num_layers: int = -1,
             
         ):
@@ -201,8 +201,13 @@ class Block(torch.nn.Module):
         self.num_layers = num_layers
         self.max_seq_len = max_seq_len
         self.theta = theta
-
-        self.__init_parameters()
+        if weights:
+            self.__init_parameters()
+        else :
+            self.norm1 = RMSNorm(self.d_model)
+            self.attn = Attention(self.d_model, self.num_heads, enable_rope=True, theta=self.theta, max_seq_len=self.max_seq_len)
+            self.norm2 = RMSNorm(self.d_model)
+            self.ffn = FFN(self.d_model, self.d_ff)
 
     def __init_parameters(self) :
         if self.num_layers == -1:
@@ -243,6 +248,61 @@ class Block(torch.nn.Module):
 
         return out_feature
 
+class TransformerLM(torch.nn.Module):
+    def __init__(
+        self,
+        vocab_size: int,
+        context_length: int,
+        d_model: int,
+        num_layers: int,
+        num_heads: int,
+        d_ff: int,
+        rope_theta: float,
+        
+        weights: dict[str, Tensor] | None = None,
+    ):
+        super().__init__()
+        self.embedder = Embedding(vocab_size=vocab_size, embedding_dim=d_model)
+        if weights:
+            self.embedder.W.data = weights["token_embeddings.weight"]
+        self.layers = torch.nn.ModuleList()
+        for i in range(num_layers):
+            layer = Block(
+                d_model=d_model,
+                num_heads=num_heads,
+                d_ff=d_ff,
+                weights=weights,
+                theta=rope_theta,
+                max_seq_len=context_length,
+                num_layers=i,                
+            )
+            self.layers.append(layer)
+        self.ln_final = RMSNorm(d_model)
+        if weights:
+            self.ln_final.W.data = weights["ln_final.weight"]
+        self.lm_head = Linear(d_model, vocab_size)
+        if weights:
+            self.lm_head.W.data = weights["lm_head.weight"]
+
+    def forward(
+        self,
+        in_indices: Int[Tensor, " batch_size sequence_length"],
+    ) -> Float[Tensor, " batch_size sequence_length vocab_size"]:
+        
+        in_features:Float[Tensor, "batch_size seq_len d_model"] = self.embedder(in_indices)
+        token_positions: Int[Tensor, " ... sequence_length"] = repeat(
+            torch.arange(in_features.size(1), device=in_features.device),
+            'seq -> batch seq',
+            batch=in_features.size(0)
+        )     
+        for layer in self.layers:
+            in_features = layer(in_features, token_positions)
+
+        in_features = self.ln_final(in_features)
+        logits = self.lm_head(in_features)
+
+        return logits
+    
 
 def transformer_lm(
     vocab_size: int,
@@ -252,11 +312,12 @@ def transformer_lm(
     num_heads: int,
     d_ff: int,
     rope_theta: float,
-    weights: dict[str, Tensor],
     in_indices: Int[Tensor, " batch_size sequence_length"],
+    weights: dict[str, Tensor] | None = None,
 ) -> Float[Tensor, " batch_size sequence_length vocab_size"]:
     embedder = Embedding(vocab_size, d_model)
-    embedder.W.data = weights["token_embeddings.weight"]
+    if weights:
+        embedder.W.data = weights["token_embeddings.weight"]
 
     in_features:Float[Tensor, "batch_size seq_len d_model"] = embedder(in_indices)
 
@@ -285,12 +346,14 @@ def transformer_lm(
        
     # 5. 最终层归一化
     ln_final = RMSNorm(d_model)
-    ln_final.W.data = weights["ln_final.weight"]
+    if weights:
+        ln_final.W.data = weights["ln_final.weight"]
     in_features = ln_final(in_features)
     
     # 6. 语言模型头
     lm_head = Linear(d_model, vocab_size)
-    lm_head.W.data = weights["lm_head.weight"]
+    if weights:
+        lm_head.W.data = weights["lm_head.weight"]
     logits = lm_head(in_features)  # [batch_size, sequence_length, vocab_size]
     
     # 7. Softmax得到概率分布

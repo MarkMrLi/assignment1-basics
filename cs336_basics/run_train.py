@@ -54,10 +54,12 @@ def main() :
     # 1. 加载 tokenizer
     tokenizer_file_path = os.getenv("TOKENIZER_PATH")
     tokenizer = Tokenizer.from_files(tokenizer_file_path)
+
+    print("Finish preparing Tokenizer")
     # 2. 加载数据
     data_input_path = os.getenv("DATA_INPUT_PATH")
     data = load_data(data_input_path, tokenizer)
-
+    print("Loaded Data")
     batch_size = int(os.getenv("BATCH_SIZE", "10000"))
     context_len = int(os.getenv("CONTEXT_LEN"))
     # 3. train_loop
@@ -86,7 +88,7 @@ def main() :
 
     serialization_path = Path(os.getenv("SERIALIZATION_PATH"))
     serialization_path.mkdir(parents=True, exist_ok=True)
-
+    print("Start train loop")
     it = 0
     for it in range(max_steps):
         # 1. 计算 lr
@@ -107,7 +109,8 @@ def main() :
         x, y = get_batch(
             dataset=data, 
             batch_size=batch_size, 
-            context_length=context_len
+            context_length=context_len,
+            device = "cpu"
         )
         y_hat = model(x)
         loss = cross_entropy(logits=y_hat,targets=y)
@@ -115,5 +118,8 @@ def main() :
         optimizer.step()
         if it % 2000 == 0 and it != 0:
             checkpoint_path = serialization_path / f"checkpoint_{it}.pt" 
-            save_checkpoint(model=model, optimizer=optimizer, iteration=it,out=checkpoint_path)     
+            save_checkpoint(model=model, optimizer=optimizer, iteration=it,out=checkpoint_path)
+            print(f"[checkpoint] saved to {checkpoint_path}")     
 
+if __name__ == "__main__":
+    main()

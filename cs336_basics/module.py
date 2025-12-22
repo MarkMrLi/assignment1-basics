@@ -107,6 +107,9 @@ class Rope(torch.nn.Module):
         sin = self.sin_cache[token_positions]
         cos = self.cos_cache[token_positions]
 
+        if cos.ndim == 3:
+            cos = cos.unsqueeze(1)  # 变为 [batch, 1, seq_len, head_dim]
+            sin = sin.unsqueeze(1)  # 变为 [batch, 1, seq_len, head_dim]
         pair_x = rearrange(x, "... (d_k_dived2 tow) -> ... d_k_dived2 tow", tow = 2)
         
         x1 = pair_x[..., 0]

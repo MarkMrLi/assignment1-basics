@@ -20,12 +20,12 @@ def load_data(
     extension = input_path.split('.')[1]
     
     if extension == "dat" :
-        return np.memmap(input_path,dtype=np.uint32,mode='r')
+        return np.memmap(input_path,dtype=np.int32,mode='r')
     
     # 1. 统计总 token 数
     total_tokens = count_token(input_path, tokenizer)
     shape = (total_tokens,)
-    dtype = np.uint32
+    dtype = np.int32
     output_path = file_name + ".dat"
     memmap = np.memmap(output_path, dtype=dtype, shape=shape,mode='w+')
 

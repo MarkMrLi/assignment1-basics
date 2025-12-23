@@ -69,9 +69,9 @@ class FFN(torch.nn.Module):
         super().__init__()
         self.d_model = d_model
         self.d_ff = d_ff
-        self.gate_proj = Linear(d_model, d_ff)#torch.nn.Parameter(torch.empty((d_ff, d_model)))
-        self.down_proj = Linear(d_model, d_ff)# torch.nn.Parameter(torch.empty((d_model, d_ff)))
-        self.up_proj = Linear(d_ff, d_model)# torch.nn.Parameter(torch.empty((d_ff, d_model)))
+        self.gate_proj = Linear(in_features=d_model, out_features=d_ff)#torch.nn.Parameter(torch.empty((d_ff, d_model)))
+        self.down_proj = Linear(in_features=d_ff,out_features=d_model)# torch.nn.Parameter(torch.empty((d_model, d_ff)))
+        self.up_proj = Linear(in_features=d_model,out_features=d_ff)# torch.nn.Parameter(torch.empty((d_ff, d_model)))
     
     def forward(self, x: torch.Tensor) -> torch.Tensor :
         gate = self.gate_proj(x)
@@ -131,8 +131,8 @@ def scaled_dot_product_attention(
     V: Float[Tensor, " ... values d_v"],
     mask: Bool[Tensor, " ... queries keys"] | None = None,
 ) -> Float[Tensor, " ... queries d_v"]:
-    d_k = torch.tensor([K.shape[-1]])
-    pre_softmax_val = einsum(Q, K, "... queries d_k, ... keys d_k -> ... queries keys") / torch.sqrt(d_k)
+    d_k = K.shape[-1]
+    pre_softmax_val = einsum(Q, K, "... queries d_k, ... keys d_k -> ... queries keys") / (d_k ** 0.5)
 
     if mask is not None :
         pre_softmax_val.masked_fill_(~mask, -torch.inf)
@@ -297,9 +297,12 @@ class TransformerLM(torch.nn.Module):
             torch.arange(in_features.size(1), device=in_features.device),
             'seq -> batch seq',
             batch=in_features.size(0)
-        )     
+        )
+        layer_id = 0     
         for layer in self.layers:
+            print(f"Training layer{layer_id}")
             in_features = layer(in_features, token_positions)
+            layer_id = layer_id + 1
 
         in_features = self.ln_final(in_features)
         logits = self.lm_head(in_features)

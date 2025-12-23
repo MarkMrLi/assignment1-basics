@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 import os
 from torch import Tensor
 from pathlib import Path
+import torch
 load_dotenv()
 
 def load_data(
@@ -20,12 +21,12 @@ def load_data(
     extension = input_path.split('.')[1]
     
     if extension == "dat" :
-        return np.memmap(input_path,dtype=np.int32,mode='r')
+        return np.memmap(input_path,dtype=np.int64,mode='r')
     
     # 1. 统计总 token 数
     total_tokens = count_token(input_path, tokenizer)
     shape = (total_tokens,)
-    dtype = np.int32
+    dtype = np.int64
     output_path = file_name + ".dat"
     memmap = np.memmap(output_path, dtype=dtype, shape=shape,mode='w+')
 
@@ -74,7 +75,8 @@ def main() :
     cosine_cycle_iters = int(os.getenv("COSINE_CYCLE_ITERS"))
     base_lr = float(os.getenv("BASE_LR"))
     min_lr = float(os.getenv("MIN_LR"))
-    
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
     model = TransformerLM(
         vocab_size=vocab_size,
         context_length=context_len,
@@ -89,6 +91,8 @@ def main() :
     serialization_path = Path(os.getenv("SERIALIZATION_PATH"))
     serialization_path.mkdir(parents=True, exist_ok=True)
     print("Start train loop")
+    if device == "cuda":
+        model.to("cuda")
     it = 0
     for it in range(max_steps):
         # 1. 计算 lr
@@ -110,10 +114,10 @@ def main() :
             dataset=data, 
             batch_size=batch_size, 
             context_length=context_len,
-            device = "cpu"
+            device = device
         )
         y_hat = model(x)
-        loss = cross_entropy(logits=y_hat,targets=y)
+        loss = cross_entropy(logits=y_hat.view(-1,y_hat.size(-1)),targets=y.view(-1))
         loss.backward()
         optimizer.step()
         if it % 2000 == 0 and it != 0:

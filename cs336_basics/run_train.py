@@ -5,6 +5,7 @@ from cs336_basics.optimizer import AdamW
 from cs336_basics.utils import cross_entropy, get_lr_cosine_schedule
 from cs336_basics.data import get_batch
 from cs336_basics.serialization import save_checkpoint, load_checkpoint
+from cs336_basics.logger import SimpleLogger
 import argparse
 from dotenv import load_dotenv
 import os
@@ -52,18 +53,22 @@ def count_token(input_path, tokenizer:Tokenizer) -> int :
 
 
 def main() :
-    # 1. 加载 tokenizer
+    # 1. 初始化日志记录器
+    logger = SimpleLogger(log_dir="logs", experiment_name=os.getenv("EXPERIMENT_NAME"))
+    
+    # 2. 加载 tokenizer
     tokenizer_file_path = os.getenv("TOKENIZER_PATH")
     tokenizer = Tokenizer.from_files(tokenizer_file_path)
 
-    print("Finish preparing Tokenizer")
-    # 2. 加载数据
+    logger.log_info("Finish preparing Tokenizer")
+    # 3. 加载数据
     data_input_path = os.getenv("DATA_INPUT_PATH")
     data = load_data(data_input_path, tokenizer)
-    print("Loaded Data")
+    logger.log_info("Loaded Data")
+    
+    # 4. 收集配置参数
     batch_size = int(os.getenv("BATCH_SIZE", "10000"))
     context_len = int(os.getenv("CONTEXT_LEN"))
-    # 3. train_loop
     vocab_size = tokenizer.get_vocab_size()
     d_model = int(os.getenv("D_MODEL"))
     num_layers = int(os.getenv("NUM_LAYERS"))
@@ -76,7 +81,29 @@ def main() :
     base_lr = float(os.getenv("BASE_LR"))
     min_lr = float(os.getenv("MIN_LR"))
     device = "cuda" if torch.cuda.is_available() else "cpu"
-
+    
+    # 5. 记录实验配置
+    config = {
+        "batch_size": batch_size,
+        "context_len": context_len,
+        "vocab_size": vocab_size,
+        "d_model": d_model,
+        "num_layers": num_layers,
+        "num_heads": num_heads,
+        "d_ff": d_ff,
+        "rope_theta": rope_theta,
+        "warmup_steps": warmup_steps,
+        "max_steps": max_steps,
+        "cosine_cycle_iters": cosine_cycle_iters,
+        "base_lr": base_lr,
+        "min_lr": min_lr,
+        "device": device,
+        "data_input_path": data_input_path,
+        "tokenizer_file_path": tokenizer_file_path,
+    }
+    logger.log_config(config)
+    
+    # 6. 创建模型和优化器
     model = TransformerLM(
         vocab_size=vocab_size,
         context_length=context_len,
@@ -90,10 +117,12 @@ def main() :
 
     serialization_path = Path(os.getenv("SERIALIZATION_PATH"))
     serialization_path.mkdir(parents=True, exist_ok=True)
-    print("Start train loop")
+    logger.log_info("Start train loop")
+    
     if device == "cuda":
         model.to("cuda")
-    it = 0
+        
+    # 7. 训练循环
     for it in range(max_steps):
         # 1. 计算 lr
         lr = get_lr_cosine_schedule(
@@ -120,10 +149,25 @@ def main() :
         loss = cross_entropy(logits=y_hat.view(-1,y_hat.size(-1)),targets=y.view(-1))
         loss.backward()
         optimizer.step()
+        
+        # 4. 记录训练指标
+        logger.log_metrics({
+            'loss': loss.item(),
+            'lr': lr
+        }, step=it)
+        
+        # 5. 定期打印和保存checkpoint
+        if it % 100 == 0:
+            logger.log_info(f"Step {it}: loss={loss.item():.4f}, lr={lr:.6f}")
+            
         if it % 200 == 0 and it != 0:
             checkpoint_path = serialization_path / f"checkpoint_{it}.pt" 
             save_checkpoint(model=model, optimizer=optimizer, iteration=it,out=checkpoint_path)
-            print(f"[checkpoint] saved to {checkpoint_path}")     
+            logger.log_checkpoint(it, str(checkpoint_path))
+    
+    # 8. 训练完成摘要
+    logger.log_info("Training completed!")
+    logger.print_summary()     
 
 if __name__ == "__main__":
     main()

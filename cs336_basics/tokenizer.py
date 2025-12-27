@@ -24,7 +24,14 @@ class Tokenizer :
         # Create a reverse vocabulary for quick lookups
         self.byte_to_id = {v: k for k, v in vocab.items()}
         self.pat = PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+        self.pat_re = re.compile(self.pat)
 
+        self.cache = {} # 词级别的缓存
+        if special_tokens:
+            # 按照长度降序排序特殊token，确保先匹配长的token
+            sorted_special_tokens = sorted(self.special_tokens, key=len, reverse=True)
+            self.special_pat = re.compile(f"({'|'.join(map(re.escape, sorted_special_tokens))})")
+        
     @classmethod
     def from_files(
         cls,
@@ -53,15 +60,11 @@ class Tokenizer :
         if not self.special_tokens:
             return self._encode_chunk(text)
         
-        # 按照长度降序排序特殊token，确保先匹配长的token
-        sorted_special_tokens = sorted(self.special_tokens, key=len, reverse=True)
-        special_pat = re.compile(f"({'|'.join(map(re.escape, sorted_special_tokens))})")
-        
         ids = []
         last_end = 0
         
         # 使用finditer而不是splititer，这样可以控制匹配顺序
-        for match in special_pat.finditer(text):
+        for match in self.special_pat.finditer(text):
             # 处理特殊token之前的普通文本
             start, end = match.span()
             if start > last_end:
@@ -118,8 +121,11 @@ class Tokenizer :
         
         ids = []
 
-        for m in re.finditer(self.pat, text_chunk):
+        for m in self.pat_re.finditer(text_chunk):
             pre_token = m.group()
+            if pre_token in self.cache:
+                ids.extend(self.cache[pre_token])
+                continue
             byte_parts = [bytes([b]) for b in pre_token.encode('utf-8')]
 
             if not byte_parts:
@@ -135,24 +141,23 @@ class Tokenizer :
                 changed = False
                 new_byte_parts = []
                 i = 0
-                
-                # 找到所有可以合并的字节对及其在merges中的优先级
-                merge_candidates = []
+
+                best_pair = None
+                min_priority = float('inf')
                 for idx, (b1, b2) in enumerate(zip(byte_parts[:-1], byte_parts[1:])):
                     pair = (b1, b2)
                     # 检查这个字节对是否在合并规则列表中
                     if pair in self.merges:
                         # 使用在merges列表中的索引作为优先级（索引越小优先级越高）
                         priority = self.merges[pair]
-                        merge_candidates.append((priority, pair, idx))
+                        # merge_candidates.append((priority, pair, idx))
+                        if priority < min_priority:
+                            min_priority = priority
+                            best_pair = pair
                 
-                if not merge_candidates:
+                if not best_pair:
                     break
-                    
-                # 找到优先级最高的合并对（索引最小的）
-                merge_candidates.sort(key=lambda x: x[0])
-                best_priority, best_pair, best_idx = merge_candidates[0]
-                
+
                 # 应用合并
                 while i < len(byte_parts):
                     if i < len(byte_parts) - 1 and (byte_parts[i], byte_parts[i+1]) == best_pair:
@@ -166,8 +171,12 @@ class Tokenizer :
                 byte_parts = new_byte_parts
 
             # 将最终的字节序列转换为ID
+            ids_list = []
+            
             for byte_seq in byte_parts:
-                ids.append(self.byte_to_id[byte_seq])
+                ids_list.append(self.byte_to_id[byte_seq])
+            self.cache[pre_token] = ids_list
+            ids.extend(ids_list)
         return ids
     def get_vocab_size(self) -> int:
         return len(self.vocab)

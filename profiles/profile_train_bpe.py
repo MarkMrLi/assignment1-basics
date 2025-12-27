@@ -1,6 +1,9 @@
 import argparse
 import json
 import base64
+import cProfile
+import pstats
+from io import StringIO
 
 from cs336_basics.tokenizer import train_bpe
 
@@ -19,9 +22,14 @@ def main():
         default="tokenizer.json",
         help="Path to save the tokenizer JSON file.",
     )
+    parser.add_argument("--profile", action="store_true", help="Enable profiling")
     args = parser.parse_args()
 
     special_tokens = ["<|endoftext|>"]
+
+    if args.profile:
+        profiler = cProfile.Profile()
+        profiler.enable()
 
     # ---- Train BPE ----
     vocab, merges = train_bpe(
@@ -29,8 +37,19 @@ def main():
         args.vocab_size,
         special_tokens=special_tokens,
     )
-    # vocab: dict[int, bytes]
-    # merges: list[tuple[bytes, bytes]]
+    
+    if args.profile:
+        profiler.disable()
+        
+        # Print to console
+        s = StringIO()
+        ps = pstats.Stats(profiler, stream=s).sort_stats('cumulative')
+        ps.print_stats(30)  # Top 30 functions
+        print(s.getvalue())
+        
+        # Save to file
+        profiler.dump_stats('bpe_training.prof')
+        print("Profile saved to bpe_training.prof")
 
     # ---- Serialize ----
     tokenizer_json = {

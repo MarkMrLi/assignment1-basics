@@ -120,7 +120,7 @@ def main() :
         loss = cross_entropy(logits=y_hat.view(-1,y_hat.size(-1)),targets=y.view(-1))
         loss.backward()
         optimizer.step()
-        if it % 2000 == 0 and it != 0:
+        if it % 200 == 0 and it != 0:
             checkpoint_path = serialization_path / f"checkpoint_{it}.pt" 
             save_checkpoint(model=model, optimizer=optimizer, iteration=it,out=checkpoint_path)
             print(f"[checkpoint] saved to {checkpoint_path}")     

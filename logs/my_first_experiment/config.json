@@ -1,0 +1,18 @@
+{
+  "batch_size": 8,
+  "context_len": 256,
+  "vocab_size": 10000,
+  "d_model": 512,
+  "num_layers": 4,
+  "num_heads": 16,
+  "d_ff": 1344,
+  "rope_theta": 10000.0,
+  "warmup_steps": 4000,
+  "max_steps": 160000,
+  "cosine_cycle_iters": 156000,
+  "base_lr": 0.0001,
+  "min_lr": 1e-05,
+  "device": "cuda",
+  "data_input_path": "/home/suma2/repo/assignment1-basics/data/TinyStoriesV2-GPT4-train.txt",
+  "tokenizer_file_path": "/home/suma2/repo/assignment1-basics/data/tokenizer.json"
+}

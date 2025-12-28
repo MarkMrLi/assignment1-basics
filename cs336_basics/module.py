@@ -2,7 +2,7 @@ import torch
 from torch import Tensor
 from einops import einsum, rearrange, repeat
 from jaxtyping import Bool, Float, Int
-from cs336_basics.utils import softmax
+from cs336_basics.utils import softmax,silu
 
 class Linear(torch.nn.Module):
     def __init__(self, in_features: int, out_features:int, device=None, dtype=None):
@@ -77,7 +77,7 @@ class FFN(torch.nn.Module):
         gate = self.gate_proj(x)
         up = self.up_proj(x)
 
-        hidden = gate * torch.sigmoid(gate) * up
+        hidden = silu(gate) * up
 
         result = self.down_proj(hidden)
         return result
@@ -300,7 +300,7 @@ class TransformerLM(torch.nn.Module):
         )
         layer_id = 0     
         for layer in self.layers:
-            print(f"Training layer{layer_id}")
+            # print(f"Training layer{layer_id}")
             in_features = layer(in_features, token_positions)
             layer_id = layer_id + 1
 

@@ -71,3 +71,6 @@ def gradient_clipping(
         for p in parameters:
             if p.grad is not None and p.requires_grad:
                 p.grad.data *= scaling_factor  # 用 data 避免计算图问题
+
+def silu(x: torch.Tensor) -> torch.Tensor:
+    return x * torch.sigmoid(x)

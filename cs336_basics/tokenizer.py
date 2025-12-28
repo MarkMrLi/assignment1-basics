@@ -8,7 +8,8 @@ from typing import Iterable, Iterator
 from typing import BinaryIO
 import base64
 import json
-
+import multiprocessing as mp
+mp.set_start_method("spawn", force=True)
 class Tokenizer :
     def __init__(
         self, 

@@ -150,17 +150,18 @@ def main() :
         loss.backward()
         optimizer.step()
         
-        # 4. 记录训练指标
-        logger.log_metrics({
-            'loss': loss.item(),
-            'lr': lr
-        }, step=it)
+
         
-        # 5. 定期打印和保存checkpoint
         if it % 100 == 0:
-            logger.log_info(f"Step {it}: loss={loss.item():.4f}, lr={lr:.6f}")
             
-        if it % 200 == 0 and it != 0:
+            # 5. 定期打印和保存checkpoint
+            logger.log_info(f"Step {it}: loss={loss.item():.4f}, lr={lr:.6f}")
+            # 4. 记录训练指标
+            logger.log_metrics({
+                'loss': loss.item(),
+                'lr': lr
+            }, step=it)            
+        if (it+1) % 20000 == 0 and it != 0:
             checkpoint_path = serialization_path / f"checkpoint_{it}.pt" 
             save_checkpoint(model=model, optimizer=optimizer, iteration=it,out=checkpoint_path)
             logger.log_checkpoint(it, str(checkpoint_path))
